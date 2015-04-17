@@ -1,5 +1,6 @@
 import System.Environment
 import Data.List
+import Data.Maybe
 
 -- Structure for managing command-line options.
 
@@ -7,9 +8,6 @@ data CmdLineOpts = CmdLineOpts {
   configurationFile :: Maybe String,
   commandToRun :: Command
 } deriving (Show)
-
-data Command = NoCommand | Help (Maybe String) | CreateDatabase String
-  deriving (Show)
 
 emptyOpts :: CmdLineOpts
 emptyOpts = CmdLineOpts {
@@ -21,6 +19,31 @@ withConfigFile :: CmdLineOpts -> String -> CmdLineOpts
 withConfigFile opts fnm = opts { configurationFile = Just fnm }
 
 withCommand opts cmd = opts { commandToRun = cmd }
+
+-- Represent a command that the user wants to perform.
+
+data Command = NoCommand 
+             | Help (Maybe String) 
+             | CreateDatabase String
+  deriving (Show)
+
+-- Run a command.
+runCommand :: Command -> IO ()
+runCommand NoCommand = runCommand (Help Nothing)
+
+-- TODO: break the printed text out into a file
+runCommand (Help Nothing) = putStrLn $ unlines [
+    "Usage: hydrant <opts>... <command>",
+    "",
+    "Options:",
+    "  --config, -c      Specify configuration file location",
+    "",
+    "Commands:",
+    "  create <name>     Create a database with a given name",
+    "  help [<topic>]    Get help, optionally on a certain topic"
+  ]
+runCommand (Help (Just topic)) = putStrLn ("Help about " ++ topic)
+runCommand (CreateDatabase db) = putStrLn ("Creating database " ++ db)
 
 -- Process a list of command-line arguments.
 
@@ -43,22 +66,32 @@ processArgs (opt:arg:args) opts
 
 -- Represent the contents of a configuration file.
 
+defaultPort :: Int
+defaultPort = 59795
+
 data Configuration = Configuration {
-  databaseFilePath :: Maybe String
+  databaseFilePath :: Maybe String,
+  port :: Int
 } deriving Show
 
 defaultConfig = Configuration {
-  databaseFilePath = Nothing
+  databaseFilePath = Nothing,
+  port = defaultPort
 }
 
 -- Handle a single line of a config file.
 
 processConfigLine :: [String] -> Configuration -> Configuration
-processConfigLine [] _ = defaultConfig
-processConfigLine (c:[]) _ = defaultConfig
-processConfigLine (opt:val) conf
-  | opt == "database-file-path"   = conf {databaseFilePath = Just (unwords val)}
-  | otherwise                     = conf
+
+processConfigLine ("port":val) conf = case (listToMaybe $ ((reads $ unwords val)::[(Int, String)])) of
+    Just (port, _) -> conf {port = port}
+    Nothing -> conf
+
+processConfigLine ("database-file-path":val) conf = conf {databaseFilePath = Just(unwords val)}
+
+processConfigLine (_:_) conf = conf
+
+processConfigLine _ conf = conf
 
 -- Handle an entire config file passed in as a double list.
 
@@ -83,3 +116,4 @@ main = do
   cfg <- readConfigFile opts
   putStrLn $ show $ opts
   putStrLn $ show $ cfg
+  runCommand $ commandToRun opts
